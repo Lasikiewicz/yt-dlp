@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>yt-dlp Web UI</title>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Architects+Daughter&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Roboto+Mono:wght@400;500;700&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css?v=5">
+</head>
+
+<body>
+    <div class="background-animation"></div>
+    <div class="container">
+        <div class="top-right-controls">
+            <select id="theme-select" title="Select Theme">
+                <option value="light">Browser-Core (Light)</option>
+                <option value="blueprint">Architectural Blueprint</option>
+                <option value="neobrutalism">Neo-Brutalism</option>
+                <option value="grunge">Grunge Collage</option>
+                <option value="retro">Retro 90s</option>
+            </select>
+            <button id="btn-close" class="secondary-btn" title="Close Server & Window"
+                style="padding: 2px 8px; font-weight: bold; font-family: 'JetBrains Mono', monospace; color: var(--error); border-color: var(--error); background: transparent;">&#10005;</button>
+        </div>
+        <header>
+            <div class="logo">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path
+                        d="M21 15V19C21 19.5304 20.7893 20.0391 20.4142 20.4142C20.0391 20.7893 19.5304 21 19 21H5C4.46957 21 3.96086 20.7893 3.58579 20.4142C3.21071 20.0391 3 19.5304 3 19V15"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                    <path d="M7 10L12 15L17 10" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round" />
+                    <path d="M12 15V3" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round" />
+                </svg>
+                <h1>yt-dlp Studio</h1>
+            </div>
+            <p class="subtitle">Premium Universal Media Downloader</p>
+        </header>
+
+        <main class="main-layout">
+            <div class="glass-card main-card">
+                <div class="tabs">
+                    <button type="button" class="tab-btn active" data-target="tab-single">Single Video</button>
+                    <button type="button" class="tab-btn" data-target="tab-channel">Channel Explorer</button>
+                </div>
+
+                <div class="options-group" id="global-options">
+                    <div class="option-item">
+                        <label for="resolution-select">Global Resolution</label>
+                        <select id="resolution-select">
+                            <option value="best">Best Available</option>
+                            <option value="1080">1080p</option>
+                            <option value="720">720p</option>
+                            <option value="480">480p</option>
+                            <option value="audio">Audio Only</option>
+                        </select>
+                    </div>
+                    <div class="option-item">
+                        <label for="threads-input">Concurrent Threads</label>
+                        <input type="number" id="threads-input" value="1" min="1" max="32" class="threads-input">
+                    </div>
+                    <div class="option-item location-item">
+                        <label for="location-input">Download Path</label>
+                        <div class="location-input-group">
+                            <input type="text" id="location-input" placeholder="e.g. C:\Downloads\Video">
+                            <button type="button" id="browse-btn" class="secondary-btn">Browse...</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="tab-single" class="tab-content active">
+                    <form id="download-form">
+                        <div class="input-group">
+                            <input type="text" id="url-input" placeholder="Paste your video URL here..." required
+                                autocomplete="off">
+                            <button type="submit" id="download-btn">
+                                <span class="btn-text">Download</span>
+                                <span class="loader" style="display: none;"></span>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <div id="tab-channel" class="tab-content">
+                    <form id="channel-form">
+                        <div class="input-group">
+                            <input type="text" id="channel-url-input" placeholder="Paste Channel or Playlist URL..."
+                                required autocomplete="off">
+                            <button type="submit" id="channel-load-btn">
+                                <span class="btn-text">Load</span>
+                                <span class="loader" style="display: none;"></span>
+                            </button>
+                        </div>
+                    </form>
+
+                    <div class="channel-toolbar" style="display: none;" id="channel-toolbar">
+                        <button type="button" id="select-all-btn" class="secondary-btn">Select All</button>
+                        <button type="button" id="queue-selected-btn" class="primary-btn">Queue Selected</button>
+                    </div>
+
+                    <div class="video-grid" id="video-grid">
+                        <!-- Video cards dynamically injected here -->
+                    </div>
+
+                    <div class="pagination-controls" id="pagination-controls" style="display: none;">
+                        <button type="button" id="prev-page-btn" class="secondary-btn" disabled>Previous Page</button>
+                        <span id="page-indicator">Page 1</span>
+                        <button type="button" id="next-page-btn" class="secondary-btn">Next Page</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="glass-card queue-card">
+                <div class="queue-header">
+                    <h3 class="queue-title">Download Queue</h3>
+                    <div class="queue-controls">
+                        <button type="button" id="start-queue-btn" class="primary-btn sm-btn">Start Queue</button>
+                        <button type="button" id="pause-queue-btn" class="secondary-btn sm-btn"
+                            style="display: none;">Pause Queue</button>
+                    </div>
+                </div>
+
+                <h4 class="queue-subtitle">Active Download</h4>
+
+                <div id="status-container" class="status-container hidden">
+                    <div class="video-info" id="video-info">Preparing download...</div>
+                    <div class="progress-wrapper">
+                        <div class="progress-bar-bg">
+                            <div class="progress-bar-fill" id="progress-fill"></div>
+                        </div>
+                    </div>
+                    <div class="threads-container" id="threads-container" style="display: none;"></div>
+                    <div class="stats-grid">
+                        <div class="stat-item">
+                            <span class="stat-label">Progress</span>
+                            <span class="stat-value" id="percent-val">0%</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Speed</span>
+                            <span class="stat-value" id="speed-val">0 MB/s</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Downloaded</span>
+                            <span class="stat-value" id="downloaded-val">0 MB</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">ETA</span>
+                            <span class="stat-value" id="eta-val">--:--</span>
+                        </div>
+                    </div>
+                </div> <!-- closes status-container -->
+
+                <h4 class="queue-subtitle">Pending Downloads</h4>
+                <div id="queue-pending-list" class="queue-list">
+                    <div class="empty-queue">No videos in queue.</div>
+                </div>
+
+                <h3 class="queue-section-title" style="margin-top: 1rem;">DOWNLOAD HISTORY</h3>
+                <div id="queue-history-list" class="queue-list" style="margin-bottom: 0;">
+                    <div class="empty-queue" id="history-empty">No history.</div>
+                </div>
+            </div> <!-- closes queue-card -->
+        </main>
+
+        <footer>
+            <p>Powered by the open source <a href="https://github.com/yt-dlp/yt-dlp" target="_blank">yt-dlp</a> project.
+            </p>
+        </footer>
+    </div>
+    <script src="/static/script.js?v=5"></script>
+</body>
+
+</html>
