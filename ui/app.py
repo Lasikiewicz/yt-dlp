@@ -1,6 +1,7 @@
 import sys
 import os
 import asyncio
+import time
 from fastapi import FastAPI, WebSocket
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -41,6 +42,7 @@ class DownloadManager:
         self.pending_items = []
         self.active_websockets = set()
         self.pause_event = None
+        self.paused_urls = set()
         
     @property
     def is_paused(self):
@@ -57,6 +59,7 @@ class DownloadManager:
             self.active_websockets.discard(ws)
 
 manager = DownloadManager()
+cancel_flags = set()
 
 # Background Worker
 async def download_worker():
@@ -68,6 +71,10 @@ async def download_worker():
             item = await manager.queue.get()
         except asyncio.CancelledError:
             break
+            
+        if item['url'] in cancel_flags:
+            manager.queue.task_done()
+            continue
             
         try:
             manager.active_item = item
@@ -92,6 +99,15 @@ async def download_worker():
                 asyncio.set_event_loop(loop)
                 
                 def hook(d):
+                    if item['url'] in cancel_flags:
+                        raise Exception("Download cancelled by user")
+                    
+                    # Pause logic
+                    while item['url'] in manager.paused_urls:
+                        if item['url'] in cancel_flags:
+                            raise Exception("Download cancelled by user while paused")
+                        time.sleep(0.5)
+
                     # We pass the hook data back to the main thread via the queue
                     try:
                         downloaded = d.get('downloaded_bytes', 0) or 0
@@ -138,12 +154,13 @@ async def download_worker():
                     'http_chunk_size': 10485760,
                     'quiet': True,
                     'no_warnings': True,
+                    'cookiesfrombrowser': ('chrome', 'edge', 'firefox', 'brave'),
                 }
                 
                 try:
                     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                         ydl.download([item['url']])
-                    thread_q.put({"status": "finished"})
+                    thread_q.put({"status": "finished", "item": item})
                 except Exception as e:
                     thread_q.put({"status": "error", "message": str(e)})
 
@@ -167,6 +184,12 @@ async def download_worker():
             print(f"Worker Error: {e}")
             await manager.broadcast({"status": "error", "message": f"Worker crashed: {e}"})
         finally:
+            if manager.active_item:
+                url = manager.active_item['url']
+                if url in cancel_flags:
+                    cancel_flags.remove(url)
+                if url in manager.paused_urls:
+                    manager.paused_urls.remove(url)
             manager.active_item = None
             manager.queue.task_done()
 
@@ -218,12 +241,39 @@ async def websocket_endpoint(websocket: WebSocket):
                 action = req.get("action")
                 
                 if action == "start_queue":
+                    location = req.get("location")
+                    if location:
+                        for p in manager.pending_items:
+                            p["location"] = location
                     if manager.pause_event: manager.pause_event.set()
                     await manager.broadcast({"status": "queue_update", "pending": manager.pending_items, "is_paused": False})
                     continue
                 elif action == "pause_queue":
                     if manager.pause_event: manager.pause_event.clear()
                     await manager.broadcast({"status": "queue_update", "pending": manager.pending_items, "is_paused": True})
+                    continue
+                elif action == "cancel_download":
+                    cancel_url = req.get("url")
+                    if cancel_url:
+                        cancel_flags.add(cancel_url)
+                        manager.pending_items = [p for p in manager.pending_items if p["url"] != cancel_url]
+                        await manager.broadcast({"status": "queue_update", "pending": manager.pending_items})
+                    
+                    if manager.active_item and manager.active_item["url"] == cancel_url:
+                        # Already starting to cancel, worker hook will catch it
+                        pass
+                    continue
+                elif action == "pause_download":
+                    url = req.get("url")
+                    if url:
+                        manager.paused_urls.add(url)
+                        await manager.broadcast({"status": "download_paused", "url": url})
+                    continue
+                elif action == "resume_download":
+                    url = req.get("url")
+                    if url in manager.paused_urls:
+                        manager.paused_urls.remove(url)
+                        await manager.broadcast({"status": "download_resumed", "url": url})
                     continue
                     
                 url = req.get("url", "")
@@ -310,6 +360,7 @@ async def get_channel_info(url: str, page: int = 1):
                     'id': entry.get('id'),
                     'title': entry.get('title'),
                     'duration': entry.get('duration'),
+                    'thumbnail': entry.get('thumbnail'),
                     'thumbnails': entry.get('thumbnails', []),
                     'url': url,
                     'is_playlist': is_playlist
@@ -321,6 +372,7 @@ async def get_channel_info(url: str, page: int = 1):
                 'id': info.get('id'),
                 'title': info.get('title'),
                 'duration': info.get('duration'),
+                'thumbnail': info.get('thumbnail'),
                 'thumbnails': info.get('thumbnails', []),
                 'url': info.get('original_url') or info.get('webpage_url')
             }]}

@@ -1,15 +1,28 @@
 document.addEventListener('DOMContentLoaded', () => {
     // --------------------------------------------------------
-    // Elements - Single Form
-    // --------------------------------------------------------
-    const singleForm = document.getElementById('download-form');
-    const urlInput = document.getElementById('url-input');
-    const resolutionSelect = document.getElementById('resolution-select');
-    const threadsInput = document.getElementById('threads-input');
-    const locationInput = document.getElementById('location-input');
-    const browseBtn = document.getElementById('browse-btn');
+    const tabSingle = document.getElementById('tab-single');
+    const tabChannel = document.getElementById('tab-channel');
+
     const themeSelect = document.getElementById('theme-select');
     const closeBtn = document.getElementById('btn-close');
+
+    // --------------------------------------------------------
+    // Elements - Single Form
+    // --------------------------------------------------------
+    const singleSearchForm = document.getElementById('single-search-form');
+    const urlInput = document.getElementById('url-input');
+    const searchBtn = document.getElementById('search-btn');
+
+    const singleVideoResult = document.getElementById('single-video-result');
+    const singleThumb = document.getElementById('single-thumb');
+    const singleTitle = document.getElementById('single-title');
+    const singleDuration = document.getElementById('single-duration');
+    const singleDownloadBtn = document.getElementById('single-download-btn');
+    const globalChooseFolderBtn = document.getElementById('global-choose-folder-btn');
+    const globalLocationPath = document.getElementById('global-location-path');
+    const rememberLocationCb = document.getElementById('remember-location-cb');
+
+    let currentSingleItem = null; // Store fetched data
 
     // --------------------------------------------------------
     // Top-Right Controls Logic
@@ -30,46 +43,18 @@ document.addEventListener('DOMContentLoaded', () => {
         themeSelect.value = t;
         document.documentElement.setAttribute('data-theme', t);
     }
-    if (localStorage.getItem('ytResolution')) {
-        resolutionSelect.value = localStorage.getItem('ytResolution');
-    }
-    if (localStorage.getItem('ytThreads')) {
-        threadsInput.value = localStorage.getItem('ytThreads');
-    }
-    if (localStorage.getItem('ytLocation')) {
-        locationInput.value = localStorage.getItem('ytLocation');
-    }
-
-    // --------------------------------------------------------
-    // LocalStorage Event Listeners
-    // --------------------------------------------------------
     themeSelect.addEventListener('change', (e) => {
         const t = e.target.value;
         document.documentElement.setAttribute('data-theme', t);
         localStorage.setItem('ytTheme', t);
     });
 
-    threadsInput.addEventListener('change', (e) => {
-        localStorage.setItem('ytThreads', e.target.value);
-    });
-
-    locationInput.addEventListener('change', (e) => {
-        localStorage.setItem('ytLocation', e.target.value);
-    });
-
-    // --------------------------------------------------------
-    // Elements - Tabs
-    // --------------------------------------------------------
-    const tabBtns = document.querySelectorAll('.tab-btn');
-    const tabContents = document.querySelectorAll('.tab-content');
-
-    resolutionSelect.addEventListener('change', (e) => {
-        localStorage.setItem('ytResolution', e.target.value);
-        const selects = document.querySelectorAll('.item-resolution');
-        selects.forEach(select => {
-            select.value = e.target.value;
-        });
-    });
+    let rememberedLocation = localStorage.getItem('ytLastLocation');
+    if (rememberedLocation && globalLocationPath && rememberLocationCb) {
+        globalLocationPath.value = rememberedLocation;
+        rememberLocationCb.checked = true;
+        if (singleDownloadBtn) singleDownloadBtn.disabled = false;
+    }
 
     // --------------------------------------------------------
     // Elements - Channel Explorer
@@ -83,10 +68,140 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const selectAllBtn = document.getElementById('select-all-btn');
     const queueSelectedBtn = document.getElementById('queue-selected-btn');
+    const channelQualitySelect = document.getElementById('channel-quality-select');
 
     const prevPageBtn = document.getElementById('prev-page-btn');
     const nextPageBtn = document.getElementById('next-page-btn');
     const pageIndicator = document.getElementById('page-indicator');
+
+    // --------------------------------------------------------
+    // Global Navigation Logic
+    // --------------------------------------------------------
+    const navTabs = document.querySelectorAll('.nav-tab');
+
+    function switchTab(target) {
+        // Update tab buttons
+        navTabs.forEach(tab => {
+            if (tab.dataset.target === target) {
+                tab.classList.add('active');
+            } else {
+                tab.classList.remove('active');
+            }
+        });
+
+        // Update content panes
+        tabSingle.style.display = 'none';
+        tabChannel.style.display = 'none';
+
+        const mainLayout = document.querySelector('.main-layout');
+        const queueCard = document.querySelector('.queue-card');
+
+        // Always show queue card and maintain grid layout
+        if (mainLayout) mainLayout.classList.remove('single-column-mode');
+        if (queueCard) queueCard.style.display = 'flex';
+
+        if (target === 'single') {
+            tabSingle.style.display = 'block';
+        } else if (target === 'channel') {
+            tabChannel.style.display = 'block';
+        }
+    }
+
+    navTabs.forEach(tab => {
+        tab.addEventListener('click', (e) => {
+            switchTab(e.target.dataset.target);
+        });
+    });
+
+    // --------------------------------------------------------
+    // Previous Channels Logic
+    // --------------------------------------------------------
+    let channelHistory = JSON.parse(localStorage.getItem('ytChannelHistory') || '[]');
+    const previousChannelsDropdown = document.getElementById('previous-channels-dropdown');
+    const previousChannelsList = document.getElementById('previous-channels-list');
+
+    function saveChannelHistory() {
+        localStorage.setItem('ytChannelHistory', JSON.stringify(channelHistory));
+    }
+
+    function addChannelToHistory(url, title) {
+        // Remove existing if any to move it to top
+        channelHistory = channelHistory.filter(c => c.url !== url);
+        channelHistory.unshift({ url, title: title || url });
+        if (channelHistory.length > 10) channelHistory.pop(); // Keep last 10
+        saveChannelHistory();
+        renderChannelHistory();
+    }
+
+    function renderChannelHistory() {
+        if (!previousChannelsList || !previousChannelsDropdown) return;
+        previousChannelsList.innerHTML = '';
+
+        if (channelHistory.length === 0) {
+            previousChannelsDropdown.style.display = 'none';
+            return;
+        }
+        channelHistory.forEach(channel => {
+            const div = document.createElement('div');
+            div.className = 'previous-channel-item';
+            div.innerHTML = `
+                <div class="previous-channel-info" title="Load ${channel.title}">
+                    <div class="previous-channel-title">${channel.title}</div>
+                    <div class="previous-channel-url">${channel.url}</div>
+                </div>
+                <button type="button" class="remove-channel-btn" title="Remove from history" aria-label="Remove">
+                    &#10005;
+                </button>
+            `;
+
+            // Click on info to load
+            const infoDiv = div.querySelector('.previous-channel-info');
+            infoDiv.addEventListener('click', () => {
+                channelUrlInput.value = channel.url;
+                channelForm.dispatchEvent(new Event('submit'));
+                previousChannelsDropdown.style.display = 'none';
+            });
+
+            // Click on remove btn
+            const removeBtn = div.querySelector('.remove-channel-btn');
+            removeBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                channelHistory = channelHistory.filter(c => c.url !== channel.url);
+                saveChannelHistory();
+                renderChannelHistory();
+            });
+
+            previousChannelsList.appendChild(div);
+        });
+    }
+
+    renderChannelHistory();
+
+    // Toggle dropdown
+    if (channelUrlInput && previousChannelsDropdown) {
+        channelUrlInput.addEventListener('focus', () => {
+            if (channelHistory.length > 0) {
+                previousChannelsDropdown.style.display = 'block';
+            }
+        });
+
+        // Hide dropdown on outside click
+        document.addEventListener('click', (e) => {
+            if (!channelForm.contains(e.target)) {
+                previousChannelsDropdown.style.display = 'none';
+            }
+        });
+    }
+
+    function resetSingleForm() {
+        singleVideoResult.style.display = 'none';
+        urlInput.value = '';
+        currentSingleItem = null;
+        if (singleDownloadBtn) {
+            singleDownloadBtn.disabled = true;
+            singleDownloadBtn.textContent = 'Add to Queue';
+        }
+    }
 
     // --------------------------------------------------------
     // Elements - Queue Status
@@ -101,10 +216,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const threadsContainer = document.getElementById('threads-container');
     const pendingList = document.getElementById('queue-pending-list');
     const historyList = document.getElementById('queue-history-list');
+    const startQueueBtn = document.getElementById('start-queue-btn');
+    const pauseQueueBtn = document.getElementById('pause-queue-btn');
+    const pauseActiveBtn = document.getElementById('pause-active-btn');
+    const resumeActiveBtn = document.getElementById('resume-active-btn');
 
-    // --------------------------------------------------------
-    // Download History State
-    // --------------------------------------------------------
     let downloadHistory = JSON.parse(localStorage.getItem('ytHistory') || '[]');
 
     function renderHistory() {
@@ -126,15 +242,7 @@ document.addEventListener('DOMContentLoaded', () => {
             historyList.appendChild(div);
         });
     }
-
-    // Initial Render
     renderHistory();
-
-    // --------------------------------------------------------
-    // Elements - Queue Controls
-    // --------------------------------------------------------
-    const startQueueBtn = document.getElementById('start-queue-btn');
-    const pauseQueueBtn = document.getElementById('pause-queue-btn');
 
     // --------------------------------------------------------
     // Globals
@@ -146,40 +254,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentChannelUrl = "";
     let currentPage = 1;
     let loadedVideos = [];
+    let channelDefaultQuality = 'best';
 
-    // --- Tab Switching ---
-    tabBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
-            tabBtns.forEach(b => b.classList.remove('active'));
-            tabContents.forEach(c => c.classList.remove('active'));
-
-            btn.classList.add('active');
-            const targetId = btn.getAttribute('data-target');
-            document.getElementById(targetId).classList.add('active');
-        });
-    });
-
-    // --- Directory Browser ---
-    if (browseBtn) {
-        browseBtn.addEventListener('click', async () => {
-            browseBtn.disabled = true;
-            browseBtn.textContent = '...';
-            try {
-                const res = await fetch('/api/select-folder');
-                const data = await res.json();
-                if (data.path) {
-                    locationInput.value = data.path;
-                }
-            } catch (err) {
-                console.error("Failed to select folder:", err);
-            } finally {
-                browseBtn.disabled = false;
-                browseBtn.textContent = 'Browse...';
-            }
-        });
-    }
-
-    // --- Helpers ---
+    // Helpers
     function formatBytes(bytes, decimals = 2) {
         if (!+bytes) return '0 Bytes';
         const k = 1024;
@@ -209,7 +286,46 @@ document.addEventListener('DOMContentLoaded', () => {
         return `${m}:${pad(s)}`;
     }
 
-    function resetActiveStatus(msg = "Preparing download...") {
+    const cancelActiveBtn = document.getElementById('cancel-active-btn');
+    if (cancelActiveBtn) {
+        cancelActiveBtn.onclick = () => {
+            const url = cancelActiveBtn.getAttribute('data-url');
+            if (url && ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ action: 'cancel_download', url: url }));
+                cancelActiveBtn.disabled = true;
+                cancelActiveBtn.textContent = 'Cancelling...';
+            }
+        };
+    }
+
+    if (pauseActiveBtn) {
+        pauseActiveBtn.onclick = () => {
+            const url = pauseActiveBtn.getAttribute('data-url');
+            if (url && ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ action: 'pause_download', url: url }));
+            }
+        };
+    }
+
+    if (resumeActiveBtn) {
+        resumeActiveBtn.onclick = () => {
+            const url = resumeActiveBtn.getAttribute('data-url');
+            if (url && ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ action: 'resume_download', url: url }));
+            }
+        };
+    }
+
+    pendingList.addEventListener('click', (e) => {
+        if (e.target.classList.contains('cancel-btn')) {
+            const url = e.target.getAttribute('data-url');
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ action: 'cancel_download', url: url }));
+            }
+        }
+    });
+
+    function resetActiveStatus(msg = "Preparing download...", url = "") {
         statusContainer.classList.remove('hidden', 'success', 'error');
         progressFill.style.width = '0%';
         percentVal.textContent = '0%';
@@ -217,11 +333,26 @@ document.addEventListener('DOMContentLoaded', () => {
         downloadedVal.textContent = '0 MB';
         etaVal.textContent = '--:--';
         videoInfo.textContent = msg;
-        videoInfo.style.color = '#e2e8f0';
+        videoInfo.style.color = 'var(--text-main)';
         threadsContainer.style.display = 'none';
         threadsContainer.innerHTML = '';
         activeFragments = {};
         progressHistory = [];
+
+        if (cancelActiveBtn) {
+            cancelActiveBtn.style.display = url ? 'block' : 'none';
+            cancelActiveBtn.disabled = false;
+            cancelActiveBtn.textContent = 'Cancel';
+            cancelActiveBtn.setAttribute('data-url', url);
+        }
+        if (pauseActiveBtn) {
+            pauseActiveBtn.style.display = url ? 'block' : 'none';
+            pauseActiveBtn.setAttribute('data-url', url);
+        }
+        if (resumeActiveBtn) {
+            resumeActiveBtn.style.display = 'none';
+            resumeActiveBtn.setAttribute('data-url', url);
+        }
     }
 
     function renderQueuePending(pendingArr) {
@@ -237,12 +368,13 @@ document.addEventListener('DOMContentLoaded', () => {
             div.innerHTML = `
                 <span class="queue-item-title">${item.title || item.url}</span>
                 <span class="queue-item-res">${item.resolution}</span>
+                <button class="cancel-btn" data-url="${item.url}" style="margin-left:8px; padding:2px 6px; font-size: 0.75rem; background:transparent; border:1px solid var(--error); color:var(--error); border-radius:4px; cursor:pointer;" title="Cancel">X</button>
             `;
             pendingList.appendChild(div);
         });
     }
 
-    // --- WebSocket Global Connection ---
+    // --- WebSocket ---
     function connectWS() {
         if (ws) return;
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -252,10 +384,12 @@ document.addEventListener('DOMContentLoaded', () => {
             let data;
             try { data = JSON.parse(event.data); } catch (e) { return; }
 
-            // Handle Queue Toggle State
             if (data.is_paused !== undefined) {
                 if (data.is_paused) {
-                    if (startQueueBtn) startQueueBtn.style.display = 'block';
+                    if (startQueueBtn) {
+                        startQueueBtn.style.display = 'block';
+                        startQueueBtn.textContent = 'Start Queue';
+                    }
                     if (pauseQueueBtn) pauseQueueBtn.style.display = 'none';
                 } else {
                     if (startQueueBtn) startQueueBtn.style.display = 'none';
@@ -265,7 +399,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (data.status === 'state') {
                 if (data.active) {
-                    resetActiveStatus(`Downloading: ${data.active.title || data.active.url}`);
+                    resetActiveStatus(`Downloading: ${data.active.title || data.active.url}`, data.active.url);
                 }
                 renderQueuePending(data.pending);
             }
@@ -274,7 +408,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             else if (data.status === 'queue_started') {
                 statusContainer.classList.remove('hidden');
-                resetActiveStatus(`Downloading: ${data.item.title || data.item.url}`);
+                resetActiveStatus(`Downloading: ${data.item.title || data.item.url}`, data.item.url);
                 if (data.pending) renderQueuePending(data.pending);
             }
             else if (data.status === 'downloading') {
@@ -286,8 +420,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 let now = Date.now();
                 let activeKeys = Object.keys(activeFragments).filter(k => now - activeFragments[k] < 1500);
 
-                let threadsNum = parseInt(threadsInput.value, 10) || 1;
-                if (activeKeys.length > 0 && threadsNum > 1) {
+                if (activeKeys.length > 0) {
                     threadsContainer.style.display = 'flex';
                     threadsContainer.innerHTML = '';
                     activeKeys.forEach(k => {
@@ -315,10 +448,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     smoothedSpeed = data.speed || 0;
                 }
 
-                let finalSpeed = (threadsNum > 1) ? smoothedSpeed : (data.speed || smoothedSpeed);
+                let finalSpeed = data.speed > 0 ? data.speed : smoothedSpeed;
                 speedVal.textContent = `${formatBytes(finalSpeed)}/s`;
 
-                if (threadsNum > 1 && finalSpeed > 0 && data.total_bytes > 0) {
+                if (finalSpeed > 0 && data.total_bytes > 0) {
                     let remaining = data.total_bytes - data.downloaded_bytes;
                     etaVal.textContent = formatTime(remaining / finalSpeed);
                 } else {
@@ -335,8 +468,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     const displayFilename = data.filename.split(/[/\\]/).pop();
                     videoInfo.textContent = `Downloading: ${displayFilename}`;
                 }
-            }
-            else if (data.status === 'finished') {
+            } else if (data.status === 'download_paused') {
+                if (pauseActiveBtn && resumeActiveBtn) {
+                    pauseActiveBtn.style.display = 'none';
+                    resumeActiveBtn.style.display = 'block';
+                }
+            } else if (data.status === 'download_resumed') {
+                if (pauseActiveBtn && resumeActiveBtn) {
+                    pauseActiveBtn.style.display = 'block';
+                    resumeActiveBtn.style.display = 'none';
+                }
+            } else if (data.status === 'finished' || data.status === 'error') {
                 statusContainer.classList.add('success');
                 progressFill.style.width = '100%';
                 percentVal.textContent = '100%';
@@ -352,13 +494,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     finalTitle = (data.item && (data.item.title || data.item.url)) || "Unknown";
                 }
 
-                // Add to history
-                downloadHistory.push({ title: finalTitle });
+                downloadHistory.push({
+                    title: finalTitle,
+                    url: data.item ? data.item.url : '',
+                    resolution: data.item ? data.item.resolution : '',
+                    location: data.item ? data.item.location : '',
+                    timestamp: Date.now()
+                });
                 if (downloadHistory.length > 50) downloadHistory.shift();
                 localStorage.setItem('ytHistory', JSON.stringify(downloadHistory));
                 renderHistory();
+                if (typeof renderFullHistory === 'function') { renderFullHistory(); }
 
-                // Keep success visual for 3s then hide if queue empty, or let next queue item overwrite it
                 setTimeout(() => {
                     if (statusContainer.classList.contains('success')) {
                         statusContainer.classList.add('hidden');
@@ -367,57 +514,145 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             else if (data.status === 'error') {
                 statusContainer.classList.add('error');
-                videoInfo.textContent = `Error: ${data.message}`;
-                videoInfo.style.color = 'var(--error)';
-            }
 
-            // Single URL Input UX cleanup
-            const downloadBtn = document.getElementById('download-btn');
-            const btnText = document.querySelector('.btn-text');
-            const loader = document.querySelector('.loader');
-            btnText.style.display = 'block';
-            loader.style.display = 'none';
-            downloadBtn.disabled = false;
-            urlInput.disabled = false;
+                if (data.message && data.message.includes('Download cancelled by user')) {
+                    videoInfo.textContent = 'Download Cancelled';
+                    videoInfo.style.color = 'var(--text-muted)';
+                } else {
+                    videoInfo.textContent = `Error: ${data.message}`;
+                    videoInfo.style.color = 'var(--error)';
+                }
+
+                if (cancelActiveBtn) cancelActiveBtn.style.display = 'none';
+
+                setTimeout(() => {
+                    if (statusContainer.classList.contains('error')) {
+                        statusContainer.classList.add('hidden');
+                    }
+                }, 4000);
+            }
         };
 
         ws.onclose = () => { ws = null; setTimeout(connectWS, 3000); };
     }
-
     connectWS();
 
-    // --- Single Download Form Submit ---
-    singleForm.addEventListener('submit', (e) => {
+    // --- Directory Selection Common ---
+    async function showFolderPicker() {
+        try {
+            const res = await fetch('/api/select-folder');
+            const data = await res.json();
+            if (data.path) return data.path;
+            return null;
+        } catch (err) {
+            console.error("Failed to select folder:", err);
+            return null;
+        }
+    }
+
+    // --- Single Download Logic ---
+    singleSearchForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const url = urlInput.value.trim();
         if (!url) return;
 
-        // UI Feedback
-        const downloadBtn = document.getElementById('download-btn');
-        const btnText = document.querySelector('.btn-text');
-        const loader = document.querySelector('.loader');
+        const btnText = searchBtn.querySelector('.btn-text');
+        const loader = searchBtn.querySelector('.loader');
 
         btnText.style.display = 'none';
         loader.style.display = 'block';
-        downloadBtn.disabled = true;
+        searchBtn.disabled = true;
         urlInput.disabled = true;
+        singleVideoResult.style.display = 'none';
+        currentSingleItem = null;
 
-        if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({
-                url: url,
-                resolution: resolutionSelect.value,
-                threads: parseInt(threadsInput.value, 10) || 1,
-                location: locationInput.value.trim()
-            }));
+        try {
+            const res = await fetch(`/api/channel/info?url=${encodeURIComponent(url)}&page=1`);
+            const data = await res.json();
 
-            urlInput.value = '';
-            setTimeout(() => {
-                btnText.style.display = 'block';
-                loader.style.display = 'none';
-                downloadBtn.disabled = false;
-                urlInput.disabled = false;
-            }, 500);
+            if (data.status === 'success' && data.entries && data.entries.length > 0) {
+                const vid = data.entries[0];
+                currentSingleItem = vid;
+
+                const thumbUrl = vid.thumbnail || ((vid.thumbnails && vid.thumbnails.length > 0) ? vid.thumbnails[vid.thumbnails.length - 1].url : '');
+                singleThumb.style.opacity = '1';
+                singleThumb.src = thumbUrl;
+                singleTitle.textContent = vid.title || 'Untitled Video';
+                singleDuration.textContent = formatDuration(vid.duration);
+                singleVideoResult.style.display = 'block';
+
+                if (globalLocationPath && globalLocationPath.value) {
+                    singleDownloadBtn.disabled = false;
+                } else {
+                    singleDownloadBtn.disabled = true;
+                }
+                singleDownloadBtn.textContent = 'Add to Queue';
+            } else {
+                alert(`Error: ${data.message || 'No video found'}`);
+            }
+        } catch (err) {
+            alert('Network error while searching.');
+        } finally {
+            btnText.style.display = 'block';
+            loader.style.display = 'none';
+            searchBtn.disabled = false;
+            urlInput.disabled = false;
         }
+    });
+
+    const singleResBtns = document.querySelectorAll('#single-resolutions .res-btn');
+    singleResBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            singleResBtns.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+        });
+    });
+
+    if (globalChooseFolderBtn) {
+        globalChooseFolderBtn.addEventListener('click', async () => {
+            const path = await showFolderPicker();
+            if (path) {
+                globalLocationPath.value = path;
+                singleDownloadBtn.disabled = false;
+                if (rememberLocationCb.checked) {
+                    localStorage.setItem('ytLastLocation', path);
+                }
+            }
+        });
+    }
+
+    if (rememberLocationCb) {
+        rememberLocationCb.addEventListener('change', (e) => {
+            if (e.target.checked && globalLocationPath.value) {
+                localStorage.setItem('ytLastLocation', globalLocationPath.value);
+            } else {
+                localStorage.removeItem('ytLastLocation');
+            }
+        });
+    }
+
+    singleDownloadBtn.addEventListener('click', () => {
+        if (!currentSingleItem || !ws || ws.readyState !== WebSocket.OPEN || !globalLocationPath.value) return;
+
+        const activeResObj = document.querySelector('#single-resolutions .res-btn.active');
+        const resolution = activeResObj ? activeResObj.getAttribute('data-res') : 'best';
+        const location = globalLocationPath.value.trim();
+        const threads = 1; // Defaulting to 1 for simplicity per new UI
+
+        singleDownloadBtn.textContent = 'Adding...';
+        singleDownloadBtn.disabled = true;
+
+        ws.send(JSON.stringify({
+            url: currentSingleItem.url,
+            title: currentSingleItem.title,
+            resolution: resolution,
+            threads: threads,
+            location: location
+        }));
+
+        setTimeout(() => {
+            resetSingleForm();
+        }, 1000);
     });
 
     // --- Channel Explorer logic ---
@@ -450,6 +685,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (data.status === 'success' && data.entries) {
                 loadedVideos = data.entries;
+                addChannelToHistory(currentChannelUrl, data.title || currentChannelUrl);
                 renderVideoGrid(loadedVideos);
 
                 channelToolbar.style.display = 'flex';
@@ -480,7 +716,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const card = document.createElement('div');
             card.className = 'video-card';
 
-            const thumbUrl = (vid.thumbnails && vid.thumbnails.length > 0) ? vid.thumbnails[vid.thumbnails.length - 1].url : '';
+            const thumbUrl = vid.thumbnail || ((vid.thumbnails && vid.thumbnails.length > 0) ? vid.thumbnails[vid.thumbnails.length - 1].url : '');
             const durationTxt = formatDuration(vid.duration);
 
             const isPlaylist = vid.is_playlist;
@@ -497,13 +733,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="video-info-box">
                     <div class="video-title" title="${vid.title}">${vid.title || 'Untitled Video'}</div>
                     ${!isPlaylist ? `
-                    <select class="item-resolution">
-                        <option value="best">Best Available</option>
-                        <option value="1080">1080p</option>
-                        <option value="720">720p</option>
-                        <option value="480">480p</option>
-                        <option value="audio">Audio Only</option>
-                    </select>
+                    <div class="resolution-buttons item-resolutions">
+                        <button type="button" class="res-btn ${channelDefaultQuality === 'best' ? 'active' : ''}" data-res="best">Best Available</button>
+                        <button type="button" class="res-btn ${channelDefaultQuality === '1080' ? 'active' : ''}" data-res="1080">1080p</button>
+                        <button type="button" class="res-btn ${channelDefaultQuality === '720' ? 'active' : ''}" data-res="720">720p</button>
+                        <button type="button" class="res-btn ${channelDefaultQuality === '480' ? 'active' : ''}" data-res="480">480p</button>
+                        <button type="button" class="res-btn ${channelDefaultQuality === 'audio' ? 'active' : ''}" data-res="audio">Audio Only</button>
+                    </div>
                     ` : ''}
                 </div>
             `;
@@ -522,7 +758,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 card.addEventListener('click', triggerBrowse);
             } else {
                 card.addEventListener('click', (e) => {
-                    if (e.target.tagName !== 'INPUT' && !e.target.classList.contains('browse-playlist-btn')) {
+                    if (e.target.tagName !== 'INPUT' && !e.target.classList.contains('browse-playlist-btn') && !e.target.classList.contains('res-btn')) {
                         const cb = card.querySelector('.video-checkbox');
                         if (cb) {
                             cb.checked = !cb.checked;
@@ -537,6 +773,16 @@ document.addEventListener('DOMContentLoaded', () => {
                         card.classList.toggle('selected', cb.checked);
                     });
                 }
+
+                // Handle resolution button clicks
+                const resBtns = card.querySelectorAll('.res-btn');
+                resBtns.forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.stopPropagation(); // don't toggle select
+                        resBtns.forEach(b => b.classList.remove('active'));
+                        btn.classList.add('active');
+                    });
+                });
             }
 
             videoGrid.appendChild(card);
@@ -553,27 +799,36 @@ document.addEventListener('DOMContentLoaded', () => {
         selectAllBtn.textContent = allChecked ? "Select All" : "Deselect All";
     });
 
+    channelQualitySelect.addEventListener('change', (e) => {
+        channelDefaultQuality = e.target.value;
+        const grids = videoGrid.querySelectorAll('.item-resolutions');
+        grids.forEach(grp => {
+            const btns = grp.querySelectorAll('.res-btn');
+            btns.forEach(b => {
+                b.classList.toggle('active', b.getAttribute('data-res') === channelDefaultQuality);
+            });
+        });
+    });
+
     queueSelectedBtn.addEventListener('click', () => {
         const checkboxes = videoGrid.querySelectorAll('.video-checkbox:checked');
         if (checkboxes.length === 0) return;
-
-        const thr = parseInt(threadsInput.value, 10) || 1;
-        const loc = locationInput.value.trim();
 
         checkboxes.forEach(cb => {
             const idx = cb.getAttribute('data-idx');
             const vid = loadedVideos[idx];
             const card = cb.closest('.video-card');
-            const resSelect = card.querySelector('.item-resolution');
-            const res = resSelect ? resSelect.value : 'best';
+            const activeResBtn = card.querySelector('.res-btn.active');
+            const res = activeResBtn ? activeResBtn.getAttribute('data-res') : 'best';
 
             if (vid && vid.url && ws && ws.readyState === WebSocket.OPEN) {
+                // Not setting location here; let backend default to empty temporarily
                 ws.send(JSON.stringify({
                     url: vid.url,
                     title: vid.title,
                     resolution: res,
-                    threads: thr,
-                    location: loc
+                    threads: 1, // Defaulting to 1 to simplify UI
+                    location: ""
                 }));
             }
             cb.checked = false;
@@ -595,10 +850,15 @@ document.addEventListener('DOMContentLoaded', () => {
         loadChannelVideos();
     });
 
+    // --- Queue Controls ---
     if (startQueueBtn) {
         startQueueBtn.addEventListener('click', () => {
+            if (!globalLocationPath.value) {
+                alert("Please select a download folder first.");
+                return;
+            }
             if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ action: 'start_queue' }));
+                ws.send(JSON.stringify({ action: 'start_queue', location: globalLocationPath.value }));
             }
         });
     }
@@ -610,4 +870,59 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+
+    // --------------------------------------------------------
+    // Full History Logic
+    // --------------------------------------------------------
+    const historyFullList = document.getElementById('history-full-list');
+    const historySearchInput = document.getElementById('history-search-input');
+
+    window.renderFullHistory = function (searchTerm = '') {
+        if (!historyFullList) return;
+        historyFullList.innerHTML = '';
+
+        let filtered = downloadHistory;
+        if (searchTerm) {
+            const lowerTerm = searchTerm.toLowerCase();
+            filtered = downloadHistory.filter(item =>
+                (item.title && item.title.toLowerCase().includes(lowerTerm)) ||
+                (item.url && item.url.toLowerCase().includes(lowerTerm))
+            );
+        }
+
+        if (filtered.length === 0) {
+            historyFullList.innerHTML = '<div class="empty-queue">No history.</div>';
+            return;
+        }
+
+        // We want reverse chronological order
+        [...filtered].reverse().forEach(item => {
+            const div = document.createElement('div');
+            div.className = 'history-item';
+            div.innerHTML = `
+                <div class="history-item-thumb">
+                    <!-- Thumbnail logic if available in the future. For now, empty fallback -->
+                </div>
+                <div class="history-item-info">
+                    <div class="history-item-title">${item.title || item.url}</div>
+                    <div class="history-item-meta">
+                        <span>Res: ${item.resolution || 'N/A'}</span>
+                        <span>|</span>
+                        <span>Date: ${item.timestamp ? new Date(item.timestamp).toLocaleString() : 'N/A'}</span>
+                    </div>
+                    ${item.url ? '<div class="history-item-meta" style="font-size:0.75rem; word-break: break-all;">' + item.url + '</div>' : ''}
+                </div>
+            `;
+            historyFullList.appendChild(div);
+        });
+    };
+
+    if (historySearchInput) {
+        historySearchInput.addEventListener('input', (e) => {
+            window.renderFullHistory(e.target.value.trim());
+        });
+    }
+
+    // Initialize layout
+    switchTab('single');
 });
